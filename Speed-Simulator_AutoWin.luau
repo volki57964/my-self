@@ -1,50 +1,61 @@
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RS = game:GetService("RunService")
+local VIM = game:GetService("VirtualInputManager")
 local lp = Players.LocalPlayer
 local ls = lp:WaitForChild("leaderstats")
 local spd = ls:WaitForChild("Speed")
 local wins = ls:WaitForChild("Wins")
-local aw = game.ReplicatedStorage.Remotes:WaitForChild("AddWin")
+local rb = ls:FindFirstChild("Rebirths")
 
 local farming = false
+local wHeld = false
 local conn = nil
 local startWins = wins.Value
-local sessionWins = 0
-local winRate = 0
-local lastCheck = tick()
 local lastWins = wins.Value
+local lastCheck = tick()
 
 local function nf(n)
-    local s = tostring(math.floor(math.abs(n)))
-    local r = ""
-    for i = #s, 1, -1 do
-        r = s:sub(i,i)..r
-        if (#s-i+1)%3==0 and i>1 then r=","..r end
+    if type(n) == "number" then
+        local s = tostring(math.floor(math.abs(n)))
+        local r = ""
+        for i = #s, 1, -1 do
+            r = s:sub(i,i)..r
+            if (#s-i+1)%3==0 and i>1 then r=","..r end
+        end
+        return if n<0 then "-"..r else r
     end
-    return if n<0 then "-"..r else r
+    return tostring(n)
+end
+
+local function holdW()
+    if not wHeld then
+        wHeld = true
+        VIM:SendKeyEvent(true, Enum.KeyCode.W, false, nil)
+    end
+end
+local function releaseW()
+    if wHeld then
+        wHeld = false
+        VIM:SendKeyEvent(false, Enum.KeyCode.W, false, nil)
+    end
 end
 
 local sg = Instance.new("ScreenGui")
-sg.Name = "AutoFarmGui"
-sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.DisplayOrder = 99999
-
+sg.Name = "AutoFarmGui"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.DisplayOrder = 99999
 local fr = Instance.new("Frame")
 fr.Size = UDim2.new(0,200,0,280); fr.Position = UDim2.new(0,15,0,80)
 fr.BackgroundColor3 = Color3.fromRGB(20,20,30); fr.BackgroundTransparency = 0.05
 fr.BorderSizePixel = 0; fr.Active = true
 Instance.new("UICorner",fr).CornerRadius = UDim.new(0,8)
-
 local dr = Instance.new("Frame",fr)
 dr.Size = UDim2.new(1,0,0,26); dr.BackgroundColor3 = Color3.fromRGB(35,35,50)
 dr.BorderSizePixel = 0; dr.Active = true
 Instance.new("UICorner",dr).CornerRadius = UDim.new(0,8)
-
 local ti = Instance.new("TextLabel",dr)
 ti.Size = UDim2.new(1,0,1,0); ti.BackgroundTransparency = 1
-ti.Text = "AutoWin"; ti.TextColor3 = Color3.fromRGB(255,245,220)
+ti.Text = "AutoRun"; ti.TextColor3 = Color3.fromRGB(255,245,220)
 ti.Font = Enum.Font.GothamBold; ti.TextSize = 13
-
 local dragging, dragStart, frameStart
 dr.InputBegan:Connect(function(inp)
     if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
@@ -58,53 +69,48 @@ UIS.InputChanged:Connect(function(inp)
         fr.Position = UDim2.new(frameStart.X.Scale, frameStart.X.Offset+d.X, frameStart.Y.Scale, frameStart.Y.Offset+d.Y)
     end
 end)
-
 local spLabel = Instance.new("TextLabel",fr)
 spLabel.Size = UDim2.new(1,-16,0,14); spLabel.Position = UDim2.new(0,8,0,32)
 spLabel.BackgroundTransparency = 1; spLabel.TextColor3 = Color3.fromRGB(130,200,130)
 spLabel.Font = Enum.Font.Gotham; spLabel.TextSize = 10; spLabel.TextXAlignment = Enum.TextXAlignment.Left
-spLabel.Text = "Speed: "..spd.Value
-
 local winLabel = Instance.new("TextLabel",fr)
-winLabel.Size = UDim2.new(1,-16,0,14); winLabel.Position = UDim2.new(0,8,0,48)
+winLabel.Size = UDim2.new(1,-16,0,14); winLabel.Position = UDim2.new(0,8,0,46)
 winLabel.BackgroundTransparency = 1; winLabel.TextColor3 = Color3.fromRGB(255,200,80)
 winLabel.Font = Enum.Font.Gotham; winLabel.TextSize = 10; winLabel.TextXAlignment = Enum.TextXAlignment.Left
-winLabel.Text = "Wins: "..nf(wins.Value)
-
+local earnedLabel = Instance.new("TextLabel",fr)
+earnedLabel.Size = UDim2.new(1,-16,0,14); earnedLabel.Position = UDim2.new(0,8,0,60)
+earnedLabel.BackgroundTransparency = 1; earnedLabel.TextColor3 = Color3.fromRGB(130,200,255)
+earnedLabel.Font = Enum.Font.Gotham; earnedLabel.TextSize = 10; earnedLabel.TextXAlignment = Enum.TextXAlignment.Left
+local rateLabel = Instance.new("TextLabel",fr)
+rateLabel.Size = UDim2.new(1,-16,0,14); rateLabel.Position = UDim2.new(0,8,0,74)
+rateLabel.BackgroundTransparency = 1; rateLabel.TextColor3 = Color3.fromRGB(200,160,255)
+rateLabel.Font = Enum.Font.Gotham; rateLabel.TextSize = 10; rateLabel.TextXAlignment = Enum.TextXAlignment.Left
+local rbLabel = Instance.new("TextLabel",fr)
+rbLabel.Size = UDim2.new(1,-16,0,14); rbLabel.Position = UDim2.new(0,8,0,88)
+rbLabel.BackgroundTransparency = 1; rbLabel.TextColor3 = Color3.fromRGB(255,150,150)
+rbLabel.Font = Enum.Font.Gotham; rbLabel.TextSize = 10; rbLabel.TextXAlignment = Enum.TextXAlignment.Left
 local stLabel = Instance.new("TextLabel",fr)
-stLabel.Size = UDim2.new(1,-16,0,18); stLabel.Position = UDim2.new(0,8,0,66)
+stLabel.Size = UDim2.new(1,-16,0,18); stLabel.Position = UDim2.new(0,8,0,106)
 stLabel.BackgroundTransparency = 1; stLabel.TextColor3 = Color3.fromRGB(160,160,160)
 stLabel.Font = Enum.Font.Gotham; stLabel.TextSize = 11; stLabel.TextXAlignment = Enum.TextXAlignment.Left
 stLabel.Text = "Status: Idle"
 
-local earnedLabel = Instance.new("TextLabel",fr)
-earnedLabel.Size = UDim2.new(1,-16,0,14); earnedLabel.Position = UDim2.new(0,8,0,86)
-earnedLabel.BackgroundTransparency = 1; earnedLabel.TextColor3 = Color3.fromRGB(130,200,255)
-earnedLabel.Font = Enum.Font.Gotham; earnedLabel.TextSize = 10; earnedLabel.TextXAlignment = Enum.TextXAlignment.Left
-earnedLabel.Text = "Earned: 0"
-
-local rateLabel = Instance.new("TextLabel",fr)
-rateLabel.Size = UDim2.new(1,-16,0,14); rateLabel.Position = UDim2.new(0,8,0,102)
-rateLabel.BackgroundTransparency = 1; rateLabel.TextColor3 = Color3.fromRGB(200,160,255)
-rateLabel.Font = Enum.Font.Gotham; rateLabel.TextSize = 10; rateLabel.TextXAlignment = Enum.TextXAlignment.Left
-rateLabel.Text = "Rate: 0/min"
-
 local tg = Instance.new("TextButton",fr)
-tg.Size = UDim2.new(0.5,-11,0,28); tg.Position = UDim2.new(0,8,0,122)
+tg.Size = UDim2.new(0.5,-11,0,28); tg.Position = UDim2.new(0,8,0,128)
 tg.BackgroundColor3 = Color3.fromRGB(55,130,55); tg.BorderSizePixel = 0
 tg.Text = "Start"; tg.TextColor3 = Color3.new(1,1,1)
 tg.Font = Enum.Font.GothamBold; tg.TextSize = 12
 Instance.new("UICorner",tg).CornerRadius = UDim.new(0,5)
 
 local cl = Instance.new("TextButton",fr)
-cl.Size = UDim2.new(0.5,-11,0,28); cl.Position = UDim2.new(0.5,3,0,122)
+cl.Size = UDim2.new(0.5,-11,0,28); cl.Position = UDim2.new(0.5,3,0,128)
 cl.BackgroundColor3 = Color3.fromRGB(160,55,55); cl.BorderSizePixel = 0
 cl.Text = "Close"; cl.TextColor3 = Color3.new(1,1,1)
 cl.Font = Enum.Font.Gotham; cl.TextSize = 12
 Instance.new("UICorner",cl).CornerRadius = UDim.new(0,5)
 
 local disc = Instance.new("TextLabel",fr)
-disc.Size = UDim2.new(1,-16,0,14); disc.Position = UDim2.new(0,8,0,156)
+disc.Size = UDim2.new(1,-16,0,14); disc.Position = UDim2.new(0,8,0,162)
 disc.BackgroundTransparency = 1; disc.Text = "RightShift to hide"
 disc.TextColor3 = Color3.fromRGB(100,100,110); disc.Font = Enum.Font.Gotham; disc.TextSize = 9
 disc.TextXAlignment = Enum.TextXAlignment.Left
@@ -120,40 +126,32 @@ tg.MouseButton1Click:Connect(function()
     farming = not farming
     if farming then
         tg.Text = "Stop"; tg.BackgroundColor3 = Color3.fromRGB(180,55,55)
-        setStatus("Running", Color3.fromRGB(130,255,130))
-        startWins = wins.Value
-        sessionWins = 0
-        lastCheck = tick()
-        lastWins = wins.Value
+        setStatus("Running W...", Color3.fromRGB(130,255,130))
+        startWins = wins.Value; lastWins = wins.Value; lastCheck = tick()
+        holdW()
         conn = RS.Heartbeat:Connect(function()
             spLabel.Text = "Speed: "..spd.Value
             winLabel.Text = "Wins: "..nf(wins.Value)
             earnedLabel.Text = "Earned: "..nf(wins.Value - startWins)
-            local now = tick()
-            local elapsed = now - lastCheck
+            if rb then rbLabel.Text = "Rebirths: "..rb.Value end
+            local now = tick(); local elapsed = now - lastCheck
             if elapsed >= 3 then
                 local diff = wins.Value - lastWins
-                winRate = diff / elapsed * 60
-                rateLabel.Text = "Rate: "..nf(math.floor(winRate)).."/min"
-                lastCheck = now
-                lastWins = wins.Value
-            end
-        end)
-        task.spawn(function()
-            while farming do
-                pcall(function() aw:FireServer() end)
-                task.wait(1)
+                rateLabel.Text = "Rate: "..nf(math.floor(diff / elapsed * 60)).."/min"
+                lastCheck = now; lastWins = wins.Value
             end
         end)
     else
         tg.Text = "Start"; tg.BackgroundColor3 = Color3.fromRGB(55,130,55)
         setStatus("Stopped")
+        releaseW()
         if conn then conn:Disconnect(); conn=nil end
     end
 end)
 
 cl.MouseButton1Click:Connect(function()
-    if farming then farming=false; if conn then conn:Disconnect(); conn=nil end end
+    if farming then farming=false; releaseW()
+        if conn then conn:Disconnect(); conn=nil end end
     sg:Destroy()
 end)
 
@@ -161,5 +159,3 @@ UIS.InputBegan:Connect(function(inp,gp)
     if gp then return end
     if inp.KeyCode==Enum.KeyCode.RightShift then fr.Visible = not fr.Visible end
 end)
-
-print("AutoWin v1 injected")
