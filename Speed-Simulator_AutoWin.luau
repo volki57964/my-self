@@ -9,14 +9,13 @@ local wins = ls:WaitForChild("Wins")
 local rb = ls:FindFirstChild("Rebirths")
 
 local farming = false
-local wHeld = false
 local conn = nil
 local startWins = wins.Value
 local lastWins = wins.Value
 local lastCheck = tick()
 
 local function nf(n)
-    if type(n) == "number" then
+    if type(n)=="number" then
         local s = tostring(math.floor(math.abs(n)))
         local r = ""
         for i = #s, 1, -1 do
@@ -26,19 +25,6 @@ local function nf(n)
         return if n<0 then "-"..r else r
     end
     return tostring(n)
-end
-
-local function holdW()
-    if not wHeld then
-        wHeld = true
-        VIM:SendKeyEvent(true, Enum.KeyCode.W, false, nil)
-    end
-end
-local function releaseW()
-    if wHeld then
-        wHeld = false
-        VIM:SendKeyEvent(false, Enum.KeyCode.W, false, nil)
-    end
 end
 
 local sg = Instance.new("ScreenGui")
@@ -54,7 +40,7 @@ dr.BorderSizePixel = 0; dr.Active = true
 Instance.new("UICorner",dr).CornerRadius = UDim.new(0,8)
 local ti = Instance.new("TextLabel",dr)
 ti.Size = UDim2.new(1,0,1,0); ti.BackgroundTransparency = 1
-ti.Text = "AutoRun"; ti.TextColor3 = Color3.fromRGB(255,245,220)
+ti.Text = "AutoKeys"; ti.TextColor3 = Color3.fromRGB(255,245,220)
 ti.Font = Enum.Font.GothamBold; ti.TextSize = 13
 local dragging, dragStart, frameStart
 dr.InputBegan:Connect(function(inp)
@@ -85,55 +71,45 @@ local rateLabel = Instance.new("TextLabel",fr)
 rateLabel.Size = UDim2.new(1,-16,0,14); rateLabel.Position = UDim2.new(0,8,0,74)
 rateLabel.BackgroundTransparency = 1; rateLabel.TextColor3 = Color3.fromRGB(200,160,255)
 rateLabel.Font = Enum.Font.Gotham; rateLabel.TextSize = 10; rateLabel.TextXAlignment = Enum.TextXAlignment.Left
-local rbLabel = Instance.new("TextLabel",fr)
-rbLabel.Size = UDim2.new(1,-16,0,14); rbLabel.Position = UDim2.new(0,8,0,88)
-rbLabel.BackgroundTransparency = 1; rbLabel.TextColor3 = Color3.fromRGB(255,150,150)
-rbLabel.Font = Enum.Font.Gotham; rbLabel.TextSize = 10; rbLabel.TextXAlignment = Enum.TextXAlignment.Left
+local keysLabel = Instance.new("TextLabel",fr)
+keysLabel.Size = UDim2.new(1,-16,0,14); keysLabel.Position = UDim2.new(0,8,0,88)
+keysLabel.BackgroundTransparency = 1; keysLabel.TextColor3 = Color3.fromRGB(255,200,130)
+keysLabel.Font = Enum.Font.Gotham; keysLabel.TextSize = 10; keysLabel.TextXAlignment = Enum.TextXAlignment.Left
+keysLabel.Text = "Keys: none"
 local stLabel = Instance.new("TextLabel",fr)
 stLabel.Size = UDim2.new(1,-16,0,18); stLabel.Position = UDim2.new(0,8,0,106)
 stLabel.BackgroundTransparency = 1; stLabel.TextColor3 = Color3.fromRGB(160,160,160)
 stLabel.Font = Enum.Font.Gotham; stLabel.TextSize = 11; stLabel.TextXAlignment = Enum.TextXAlignment.Left
 stLabel.Text = "Status: Idle"
-
 local tg = Instance.new("TextButton",fr)
 tg.Size = UDim2.new(0.5,-11,0,28); tg.Position = UDim2.new(0,8,0,128)
 tg.BackgroundColor3 = Color3.fromRGB(55,130,55); tg.BorderSizePixel = 0
 tg.Text = "Start"; tg.TextColor3 = Color3.new(1,1,1)
 tg.Font = Enum.Font.GothamBold; tg.TextSize = 12
 Instance.new("UICorner",tg).CornerRadius = UDim.new(0,5)
-
 local cl = Instance.new("TextButton",fr)
 cl.Size = UDim2.new(0.5,-11,0,28); cl.Position = UDim2.new(0.5,3,0,128)
 cl.BackgroundColor3 = Color3.fromRGB(160,55,55); cl.BorderSizePixel = 0
 cl.Text = "Close"; cl.TextColor3 = Color3.new(1,1,1)
 cl.Font = Enum.Font.Gotham; cl.TextSize = 12
 Instance.new("UICorner",cl).CornerRadius = UDim.new(0,5)
-
 local disc = Instance.new("TextLabel",fr)
 disc.Size = UDim2.new(1,-16,0,14); disc.Position = UDim2.new(0,8,0,162)
 disc.BackgroundTransparency = 1; disc.Text = "RightShift to hide"
 disc.TextColor3 = Color3.fromRGB(100,100,110); disc.Font = Enum.Font.Gotham; disc.TextSize = 9
 disc.TextXAlignment = Enum.TextXAlignment.Left
-
 fr.Parent = sg; sg.Parent = lp:WaitForChild("PlayerGui")
-
-local function setStatus(t, c)
-    stLabel.Text = "Status: "..t
-    stLabel.TextColor3 = c or Color3.fromRGB(160,160,160)
-end
 
 tg.MouseButton1Click:Connect(function()
     farming = not farming
     if farming then
         tg.Text = "Stop"; tg.BackgroundColor3 = Color3.fromRGB(180,55,55)
-        setStatus("Running W...", Color3.fromRGB(130,255,130))
         startWins = wins.Value; lastWins = wins.Value; lastCheck = tick()
-        holdW()
+        VIM:SendKeyEvent(true, Enum.KeyCode.W, false, nil)
         conn = RS.Heartbeat:Connect(function()
             spLabel.Text = "Speed: "..spd.Value
             winLabel.Text = "Wins: "..nf(wins.Value)
             earnedLabel.Text = "Earned: "..nf(wins.Value - startWins)
-            if rb then rbLabel.Text = "Rebirths: "..rb.Value end
             local now = tick(); local elapsed = now - lastCheck
             if elapsed >= 3 then
                 local diff = wins.Value - lastWins
@@ -141,16 +117,50 @@ tg.MouseButton1Click:Connect(function()
                 lastCheck = now; lastWins = wins.Value
             end
         end)
+        task.spawn(function()
+            while farming do
+                local root = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local pos = root.Position
+                    local near = {}
+                    for _, c in ipairs(workspace:GetDescendants()) do
+                        if c.Name:lower():find("keycap_") and c:IsA("BasePart") then
+                            local d = (c.Position - pos).Magnitude
+                            if d < 10 then
+                                local letter = c.Name:match("keycap_(.)")
+                                if letter and not near[letter] then near[letter] = true end
+                            end
+                        end
+                    end
+                    local letters = {}
+                    for l in pairs(near) do table.insert(letters, l) end
+                    if #letters > 0 then
+                        keysLabel.Text = "Keys: "..table.concat(letters, ", ")
+                        for _, l in ipairs(letters) do
+                            local kc = Enum.KeyCode[l]
+                            if kc then
+                                VIM:SendKeyEvent(true, kc, false, nil)
+                                task.wait(0.03)
+                                VIM:SendKeyEvent(false, kc, false, nil)
+                            end
+                        end
+                    else
+                        keysLabel.Text = "Keys: none"
+                    end
+                end
+                task.wait(0.5)
+            end
+        end)
     else
         tg.Text = "Start"; tg.BackgroundColor3 = Color3.fromRGB(55,130,55)
-        setStatus("Stopped")
-        releaseW()
+        VIM:SendKeyEvent(false, Enum.KeyCode.W, false, nil)
         if conn then conn:Disconnect(); conn=nil end
     end
 end)
 
 cl.MouseButton1Click:Connect(function()
-    if farming then farming=false; releaseW()
+    if farming then farming=false
+        VIM:SendKeyEvent(false, Enum.KeyCode.W, false, nil)
         if conn then conn:Disconnect(); conn=nil end end
     sg:Destroy()
 end)
