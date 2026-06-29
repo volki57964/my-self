@@ -233,20 +233,22 @@ local function setAction(t)
 end
 
 -- Detect game state
-local function detectState()
-    local ok, ws = pcall(function() return RequestWaveState:InvokeServer() end)
-    if not ok or not ws then return "hub" end
+local function isZombieModel(m)
+    if not m:IsA("Model") then return false end
+    if m == LP.Character then return false end
+    -- Check for non-player Humanoid
+    local hum = m:FindFirstChild("Humanoid")
+    return hum ~= nil
+end
 
-    for _,v in ipairs(WS:GetDescendants()) do
-        if v:IsA("Model") and (v.Name:lower():find("zombie") or v.Name:lower():find("enemy")) then
-            return "match"
+local function detectState()
+    -- Check workspace for non-player humanoid models
+    for _,v in ipairs(WS:GetChildren()) do
+        if isZombieModel(v) then return "match" end
+        for _,c in ipairs(v:GetChildren()) do
+            if isZombieModel(c) then return "match" end
         end
     end
-
-    if ws.GameState and (ws.GameState == 1 or ws.GameState == 2) then
-        return "match"
-    end
-
     return "hub"
 end
 
@@ -257,9 +259,9 @@ local function getEnemies(maxDist)
     if not root then return {} end
     local enemies = {}
     for _,v in ipairs(WS:GetDescendants()) do
-        if v:IsA("Model") and v.Name:lower():find("zombie") then
-            local hum = v:FindFirstChild("Humanoid")
-            if hum and hum.Health > 0 then
+        if isZombieModel(v) then
+            local hum = v.Humanoid
+            if hum.Health > 0 then
                 local hrp = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChild("Head") or v.PrimaryPart
                 if hrp then
                     local d = (hrp.Position - root.Position).Magnitude
