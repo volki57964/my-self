@@ -92,10 +92,12 @@ end
 
 -- GUI
 local sg = Instance.new("ScreenGui")
-sg.Name = "ZombieFarm"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.DisplayOrder = 99999
+sg.Name = "ZombieFarm"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true
+sg.DisplayOrder = 2147483647; sg.ZIndexBehavior = Enum.ZIndexBehavior.Global; sg.Enabled = true
 
 local fr = Instance.new("Frame")
-fr.Size = UDim2.new(0,230,0,440); fr.Position = UDim2.new(0,10,0,50)
+fr.Size = UDim2.new(0,230,0,440); fr.Position = UDim2.new(0.5,-115,0.5,-220); fr.Visible = true
+fr.AnchorPoint = Vector2.new(0.5, 0.5)
 fr.BackgroundColor3 = Color3.fromRGB(12,12,22); fr.BackgroundTransparency = 0.06
 fr.BorderSizePixel = 0; fr.Active = true
 Instance.new("UICorner",fr).CornerRadius = UDim.new(0,10)
@@ -209,6 +211,7 @@ disc.TextColor3 = Color3.fromRGB(80,80,95); disc.Font = Enum.Font.Gotham; disc.T
 disc.TextXAlignment = Enum.TextXAlignment.Left
 
 fr.Size = UDim2.new(0,230,0,cbY+68)
+fr.Parent = sg
 sg.Parent = LP:WaitForChild("PlayerGui")
 
 UIS.InputBegan:Connect(function(inp,gp)
