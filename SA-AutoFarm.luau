@@ -25,10 +25,10 @@ local RequestAllZombies = RStorage.ZombieRemotes.RequestAllZombies
 
 -- Configuration
 local CFG = {
-    gunFireRate = 0.1,
+    gunFireRate = 0.08,
     gearInterval = 6,
     collectInterval = 0.5,
-    detectInterval = 1,
+    detectInterval = 2,
     upgradeMinCredits = 500,
     upgradeWeapons = true,
     upgradeHealth = true,
@@ -40,6 +40,7 @@ local CFG = {
     autoRevive = true,
     autoCollect = true,
     autoVoteAgain = true,
+    autoMove = true,
 }
 
 local farming = false
@@ -173,6 +174,7 @@ local cbGear    = makeToggle("Auto Gear",       CFG.autoGear,      cbY); cbY+=18
 local cbRevive  = makeToggle("Auto Revive",     CFG.autoRevive,    cbY); cbY+=18
 local cbCollect = makeToggle("Auto Collect",    CFG.autoCollect,   cbY); cbY+=18
 local cbVote    = makeToggle("Vote PlayAgain",  CFG.autoVoteAgain, cbY); cbY+=18
+local cbMove    = makeToggle("Auto Dodge",      CFG.autoMove,      cbY); cbY+=18
 
 local toggleMap = {
     [cbUpgrade] = "upgradeWeapons", [cbHealth] = "upgradeHealth",
@@ -180,6 +182,7 @@ local toggleMap = {
     [cbShoot] = "autoShoot", [cbAim] = "autoAim",
     [cbGear] = "autoGear", [cbRevive] = "autoRevive",
     [cbCollect] = "autoCollect", [cbVote] = "autoVoteAgain",
+    [cbMove] = "autoMove",
 }
 for cb, key in pairs(toggleMap) do
     cb.MouseButton1Click:Connect(function()
@@ -247,12 +250,12 @@ local function detectState()
     return "hub"
 end
 
--- Get nearest enemy HumanoidRootPart
-local function getNearestEnemy()
+-- Get all alive enemies sorted by distance
+local function getEnemies(maxDist)
+    maxDist = maxDist or 500
     local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-
-    local nearest, minDist = nil, 300
+    if not root then return {} end
+    local enemies = {}
     for _,v in ipairs(WS:GetDescendants()) do
         if v:IsA("Model") and v.Name:lower():find("zombie") then
             local hum = v:FindFirstChild("Humanoid")
@@ -260,19 +263,40 @@ local function getNearestEnemy()
                 local hrp = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChild("Head") or v.PrimaryPart
                 if hrp then
                     local d = (hrp.Position - root.Position).Magnitude
-                    if d < minDist then minDist = d; nearest = hrp end
+                    if d < maxDist then
+                        table.insert(enemies, {hrp=hrp, dist=d, pos=hrp.Position})
+                    end
                 end
             end
         end
     end
-    return nearest
+    table.sort(enemies, function(a,b) return a.dist < b.dist end)
+    return enemies
 end
 
--- Shoot weapon
-local function shoot()
+-- Shoot at a position
+local function shootAt(targetPos)
     pcall(function()
-        GunFire:FireServer()
+        GunFire:FireServer(targetPos)
     end)
+end
+
+-- Equip weapon from backpack
+local function ensureWeapon()
+    local char = LP.Character
+    if not char then return end
+    for _,c in ipairs(char:GetChildren()) do
+        if c:IsA("Tool") then return true end
+    end
+    local bp = LP:FindFirstChild("Backpack")
+    if not bp then return false end
+    for _,t in ipairs(bp:GetChildren()) do
+        if t:IsA("Tool") then
+            t.Parent = char
+            return true
+        end
+    end
+    return false
 end
 
 -- Place class gear
@@ -456,43 +480,92 @@ local function hubPhase()
 end
 
 -- Match phase
+local nextAim = 0
+local nextMove = 0
+local nextUIUpdate = 0
+local enemyCount = 0
+
 local function matchPhase()
-    setState("Match", Color3.fromRGB(255,200,80))
-    creditsLabel.Text = "Credits: "..nf(getCredits())
-    killsLabel.Text = "Kills: "..nf(getKills())
-    shardLabel.Text = "Shards: "..nf(getShards())
-
-    local ok, ws = pcall(function() return RequestWaveState:InvokeServer() end)
-    if ok and ws then
-        waveLabel.Text = "Wave: "..tostring(ws.CurrentWave or "?")
-        if ws.CurrentWave and ws.CurrentWave > bestWave then bestWave = ws.CurrentWave end
-    end
-
-    earnedLabel.Text = "Earned: "..nf(getCredits()-startCredits).." cr"
-
     local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-
-    -- Always fix: send GunFire to create weapon if none equipped
     if not root then return end
+    local hum = LP.Character:FindFirstChild("Humanoid")
+    if not hum or hum.Health <= 0 then
+        if CFG.autoRevive then revive() end
+        return
+    end
 
-    -- Auto-aim & shoot
-    if CFG.autoShoot then
-        local target = nil
-        if CFG.autoAim then target = getNearestEnemy() end
+    ensureWeapon()
 
-        if target then
-            root.CFrame = CFrame.new(root.Position, Vector3.new(target.Position.X, root.Position.Y, target.Position.Z))
+    local now = tick()
+    local enemies = getEnemies(500)
+    enemyCount = #enemies
+
+    -- Find nearest enemy
+    if #enemies > 0 then
+        local target = enemies[1]
+
+        -- Aim at enemy (every 0.2s to avoid fighting with physics)
+        if CFG.autoAim and now - nextAim > 0.2 then
+            nextAim = now
+            pcall(function()
+                local lookAt = Vector3.new(target.pos.X, root.Position.Y, target.pos.Z)
+                root.CFrame = CFrame.lookAt(root.Position, lookAt)
+            end)
         end
 
-        local now = tick()
-        if now - lastShot > CFG.gunFireRate then
+        -- Shoot at enemy position
+        if CFG.autoShoot and now - lastShot > CFG.gunFireRate then
             lastShot = now
-            shoot()
+            shootAt(target.pos)
+        end
+
+        -- Movement: dodge if surrounded by 3+ enemies within 15 studs
+        if CFG.autoMove and now - nextMove > 0.5 then
+            nextMove = now
+            local closeCount = 0
+            for _,e in ipairs(enemies) do
+                if e.dist < 15 then closeCount = closeCount + 1 end
+            end
+            if closeCount >= 3 then
+                -- Jump
+                pcall(function() hum.Jump = true end)
+                -- Move away from nearest enemy
+                local away = (root.Position - target.pos)
+                if away.Magnitude > 0 then
+                    away = away.Unit * 15
+                    pcall(function()
+                        root.CFrame = CFrame.new(root.Position + away + Vector3.new(0, 3, 0))
+                    end)
+                end
+                setAction("Dodging! ("..closeCount.." close)")
+            end
+        end
+    else
+        -- No enemies visible - fire forward to keep weapon active
+        if CFG.autoShoot and now - lastShot > 0.3 then
+            lastShot = now
+            shootAt(root.Position + root.CFrame.LookVector * 200)
         end
     end
 
+    -- UI updates (every 0.5s)
+    if now - nextUIUpdate > 0.5 then
+        nextUIUpdate = now
+        setState("Match", Color3.fromRGB(255,200,80))
+        creditsLabel.Text = "Credits: "..nf(getCredits())
+        shardLabel.Text = "Shards: "..nf(getShards())
+        killsLabel.Text = "Enemies: "..enemyCount
+        earnedLabel.Text = "Earned: "..nf(getCredits()-startCredits).." cr"
+
+        local ok, ws = pcall(function() return RequestWaveState:InvokeServer() end)
+        if ok and ws then
+            waveLabel.Text = "Wave: "..tostring(ws.CurrentWave or "?")
+            if ws.CurrentWave and ws.CurrentWave > bestWave then bestWave = ws.CurrentWave end
+        end
+    end
+
+    -- Gear / Collect / Vote
     if CFG.autoGear then placeGear() end
-    if CFG.autoRevive then revive() end
     if CFG.autoCollect then collectDrops() end
     if CFG.autoVoteAgain then voteAgain() end
 end
@@ -515,24 +588,29 @@ tg.MouseButton1Click:Connect(function()
 
         conn = RS.Heartbeat:Connect(function()
             local now = tick()
-            if now - lastDetect < CFG.detectInterval then return end
-            lastDetect = now
-            lastUpgradeCheck = 0
 
-            local state = detectState()
-            inMatch = (state == "match")
-
+            -- Fast: match logic every frame (shooting, aiming, dodging)
             if inMatch then
                 matchPhase()
-            else
-                hubPhase()
             end
 
-            if now - rateCheckTime > 30 then
-                local diff = getCredits() - rateCheckCredits
-                rateLabel.Text = "Rate: "..nf(math.floor(diff/(now-rateCheckTime)*60)).."/min"
-                rateCheckTime = now
-                rateCheckCredits = getCredits()
+            -- Slow: state detection + hub logic every 2s
+            if now - lastDetect > CFG.detectInterval then
+                lastDetect = now
+                local state = detectState()
+                inMatch = (state == "match")
+
+                if not inMatch then
+                    hubPhase()
+                end
+
+                -- Rate tracking every 30s
+                if now - rateCheckTime > 30 then
+                    local diff = getCredits() - rateCheckCredits
+                    rateLabel.Text = "Rate: "..nf(math.floor(diff/(now-rateCheckTime)*60)).."/min"
+                    rateCheckTime = now
+                    rateCheckCredits = getCredits()
+                end
             end
         end)
         setAction("Farm started")
