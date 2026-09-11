@@ -8,33 +8,54 @@ import android.os.*;
 import androidx.core.content.FileProvider;
 import androidx.preference.PreferenceManager;
 import com.emanuelef.remote_capture.CaptureService;
+import com.emanuelef.remote_capture.ConnectionsRegister;
 import com.emanuelef.remote_capture.model.*;
 import org.json.*;
 import java.io.*;
-import java.nio.file.Files;
+import java.net.*;
 import java.util.*;
 import java.util.zip.*;
 
 public final class NetSmoke extends Instrumentation {
     @Override public void onCreate(Bundle args){super.onCreate(args);start();}
     private void require(boolean ok,String message){if(!ok)throw new IllegalStateException(message);}
+    private void echo(Network network) throws Exception {
+        byte[] data="NETCHECK_CONTROL_PAYLOAD_123456789".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        try(Socket s=network==null?new Socket():network.getSocketFactory().createSocket()) {
+            s.connect(new InetSocketAddress("10.0.2.2",18443),5000);s.setSoTimeout(5000);s.getOutputStream().write(data);s.getOutputStream().flush();
+            byte[] reply=new byte[data.length];new DataInputStream(s.getInputStream()).readFully(reply);require(Arrays.equals(data,reply),"tcp_echo_corrupted");Thread.sleep(150);
+        }
+        try(DatagramSocket s=new DatagramSocket()) {
+            if(network!=null)network.bindSocket(s);
+            s.setSoTimeout(5000);InetAddress host=InetAddress.getByName("10.0.2.2");s.connect(host,18444);
+            s.send(new DatagramPacket(data,data.length,host,18444));byte[] b=new byte[1024];DatagramPacket packet=new DatagramPacket(b,b.length);s.receive(packet);
+            require(Arrays.equals(data,Arrays.copyOf(b,packet.getLength())),"udp_echo_corrupted");Thread.sleep(150);
+        }
+    }
     @Override public void onStart(){
         Bundle out=new Bundle();Activity activity=null;
         try{
             Context c=getTargetContext();
-            Intent launch=new Intent(c,NetCheckActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            activity=startActivitySync(launch);waitForIdleSync();
+            activity=startActivitySync(new Intent(c,NetCheckActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));waitForIdleSync();
             require(activity!=null,"launcher_missing");
             ConnectivityManager cm=c.getSystemService(ConnectivityManager.class);Network net=cm.getActiveNetwork();require(net!=null,"emulator_network_missing");
-            NetReport report=new NetReport(c,net,"AUTOMATED_EMULATOR_SMOKE_NOT_USER_MEASUREMENT",false,NetReport.obj("synthetic_export_test",true));
-            report.result(NetReport.obj("target","unit-test","stage","export","status","completed"));
+            echo(net);
+            NetReport report=new NetReport(c,net,"CONTROLLED_EMULATOR_TEST_NOT_USER_DATA",false,NetReport.obj("controlled_ci_test",true));
+            NetProbe probe=new NetProbe(net,report,new NetProbe.Gate(){public boolean stopped(){return false;}public void progress(String s){}});
+            probe.run(Arrays.asList("http://10.0.2.2/","https://10.0.2.2/"),false);probe.close();
+            JSONArray observations=report.root.getJSONArray("results");boolean httpOK=false,certRejected=false;
+            for(int i=0;i<observations.length();i++) {
+                JSONObject r=observations.getJSONObject(i);
+                if("HTTP".equals(r.optString("stage")) && r.optInt("http_code")==200 && r.optInt("body_bytes")>0)httpOK=true;
+                if("TLS".equals(r.optString("stage")) && "failed".equals(r.optString("status")) && r.optString("failure").contains("SSLHandshakeException"))certRejected=true;
+            }
+            require(httpOK,"controlled_http_probe_failed");require(certRejected,"self_signed_certificate_not_rejected_as_expected");
             report.finish("smoke_test");
             File zip=NetReport.zip(c,new File[]{report.dir});require(zip.length()>0,"empty_zip");
             try(ZipFile z=new ZipFile(zip)){
-                require(z.size()==3,"wrong_zip_entry_count");
-                ZipEntry e=z.getEntry(report.id+"/report.json");require(e!=null,"json_missing");
-                JSONObject j=new JSONObject(new String(z.getInputStream(e).readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));
-                require(j.getJSONArray("results").length()==1,"json_results_lost");
+                require(z.size()==3,"wrong_zip_entry_count");ZipEntry e=z.getEntry(report.id+"/report.json");require(e!=null,"json_missing");
+                JSONObject j=new JSONObject(new String(NetReport.readStream(z.getInputStream(e)),java.nio.charset.StandardCharsets.UTF_8));
+                require(j.getJSONArray("results").length()>=4,"json_results_lost");
             }
             Uri uri=FileProvider.getUriForFile(c,c.getPackageName()+".netcheck.files",zip);
             try(InputStream f=c.getContentResolver().openInputStream(uri)){require(f!=null && f.read()==80,"shared_zip_unreadable");}
@@ -42,24 +63,23 @@ public final class NetSmoke extends Instrumentation {
             CaptureSettings s=new CaptureSettings(c,PreferenceManager.getDefaultSharedPreferences(c));
             s.app_filter=new HashSet<>(Collections.singletonList(c.getPackageName()));s.dump_mode=Prefs.DumpMode.NONE;s.ip_mode=Prefs.IpMode.BOTH;s.root_capture=false;s.tls_decryption=false;s.full_payload=false;s.socks5_enabled=false;s.auto_block_private_dns=false;s.block_quic_mode=Prefs.BlockQuicMode.NEVER;s.api_capture=true;
             PreferenceManager.getDefaultSharedPreferences(c).edit().putBoolean(Prefs.PREF_USE_SYSTEM_DNS,true).putBoolean(Prefs.PREF_MALWARE_DETECTION,false).putBoolean(Prefs.PREF_FIREWALL,false).apply();
-            Intent cap=new Intent(c,CaptureService.class).putExtra("settings",s);
-            c.startForegroundService(cap);
+            c.startForegroundService(new Intent(c,CaptureService.class).putExtra("settings",s));
             long end=SystemClock.elapsedRealtime()+12000;
             while(!CaptureService.isServiceActive()&&SystemClock.elapsedRealtime()<end)Thread.sleep(100);
             require(CaptureService.isServiceActive(),"native_capture_did_not_start");
             Thread.sleep(1200);require(!CaptureService.hasError(),"native_capture_reported_error");
             require(CaptureService.getCurPayloadMode()==Prefs.PayloadMode.NONE,"payload_collection_enabled");
-            out.putString("capture_dns",CaptureService.getDNSServer());
-            CaptureService.stopService();
-            end=SystemClock.elapsedRealtime()+8000;
-            while(CaptureService.isServiceActive()&&SystemClock.elapsedRealtime()<end)Thread.sleep(100);
+            echo(null);
+            Thread.sleep(2000);ConnectionsRegister reg=CaptureService.getConnsRegister();require(reg!=null,"capture_register_missing");
+            boolean tcp=false,udp=false;
+            synchronized(reg){for(int i=0;i<reg.getConnCount();i++){ConnectionDescriptor d=reg.getConn(i);if(d!=null && "10.0.2.2".equals(d.dst_ip) && d.rcvd_bytes>0){if(d.ipproto==6 && d.dst_port==18443)tcp=true;if(d.ipproto==17 && d.dst_port==18444)udp=true;}}}
+            require(tcp,"tcp_flow_not_observed");require(udp,"udp_flow_not_observed");
+            out.putString("capture_dns",CaptureService.getDNSServer());CaptureService.stopService();
+            end=SystemClock.elapsedRealtime()+8000;while(CaptureService.isServiceActive()&&SystemClock.elapsedRealtime()<end)Thread.sleep(100);
             require(!CaptureService.isServiceActive(),"capture_did_not_stop");
-            out.putString("stream","NETCHECK_SMOKE_OK: launcher, local JSON, ZIP export, content URI, URL validation, native VPN startup/stop; third-party apps not installed in emulator.\n");
+            out.putString("stream","NETCHECK_SMOKE_OK: launcher; controlled HTTP; self-signed TLS rejection; verified TCP and UDP round trips before/through capture; metadata present; local JSON/ZIP/content URI; capture stop. Third-party app UI and Russian networks not tested.\n");
             finish(Activity.RESULT_OK,out);
         }catch(Throwable t){out.putString("stream","NETCHECK_SMOKE_FAILED: "+NetReport.error(t)+"\n");finish(Activity.RESULT_CANCELED,out);}
-        finally{
-            if(CaptureService.isServiceActive())CaptureService.stopService();
-            if(activity!=null){Activity a=activity;runOnMainSync(a::finish);}
-        }
+        finally{if(CaptureService.isServiceActive())CaptureService.stopService();if(activity!=null){Activity a=activity;runOnMainSync(a::finish);}}
     }
 }
