@@ -63,6 +63,9 @@ public final class NetSmoke extends Instrumentation {
             CaptureSettings s=new CaptureSettings(c,PreferenceManager.getDefaultSharedPreferences(c));
             s.app_filter=new HashSet<>(Collections.singletonList(c.getPackageName()));s.dump_mode=Prefs.DumpMode.NONE;s.ip_mode=Prefs.IpMode.BOTH;s.root_capture=false;s.tls_decryption=false;s.full_payload=false;s.socks5_enabled=false;s.auto_block_private_dns=false;s.block_quic_mode=Prefs.BlockQuicMode.NEVER;s.api_capture=true;
             PreferenceManager.getDefaultSharedPreferences(c).edit().putBoolean(Prefs.PREF_USE_SYSTEM_DNS,true).putBoolean(Prefs.PREF_MALWARE_DETECTION,false).putBoolean(Prefs.PREF_FIREWALL,false).apply();
+            // The CI shell grants consent, but Android still requires prepare() to select this VPN owner.
+            // The distributed application's CaptureHelper already invokes this and asks the human for consent.
+            require(VpnService.prepare(c)==null,"emulator_vpn_permission_not_prepared");
             c.startForegroundService(new Intent(c,CaptureService.class).putExtra("settings",s));
             long end=SystemClock.elapsedRealtime()+12000;
             while(!CaptureService.isServiceActive()&&SystemClock.elapsedRealtime()<end)Thread.sleep(100);
