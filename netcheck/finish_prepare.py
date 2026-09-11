@@ -5,7 +5,6 @@ import sys, xml.etree.ElementTree as ET
 root=Path(sys.argv[1]); java=root/'app/src/main/java/com/emanuelef/remote_capture'
 p=java/'PCAPdroid.java';s=p.read_text().replace('// NetCheck: avoid persistent native diagnostic logs outside explicit reports.','if(!isUnderTest())\n            Log.init(getCacheDir().getAbsolutePath());');p.write_text(s)
 p=java/'Log.java';s=p.read_text().replace('cachedir + "/" + DEFAULT_LOGGER_PATH','"/dev/null"').replace('cachedir + "/" + MITM_LOGGER_PATH','"/dev/null"');p.write_text(s)
-# Android java.nio.file.Files does not expose Java 11 readString on this SDK.
 p=java/'netcheck/NetReport.java';s=p.read_text().replace('public static String error(Throwable t)', '''public static String readText(java.nio.file.Path path) throws IOException {
         return new String(java.nio.file.Files.readAllBytes(path), java.nio.charset.StandardCharsets.UTF_8);
     }
@@ -15,7 +14,6 @@ p=java/'netcheck/NetReport.java';s=p.read_text().replace('public static String e
         return b.toByteArray();
     }
     public static String error(Throwable t)''');p.write_text(s)
-# Treat partially written interrupted runs as interrupted when the user opens the app again.
 p=java/'netcheck/NetCheckActivity.java';s=p.read_text();s=s.replace('super.onCreate(b);getWindow()', '''super.onCreate(b);
         if(NetRunService.instance==null) {
             for(File d:NetReport.reports(this)) try {
@@ -27,10 +25,12 @@ p=java/'netcheck/NetCheckActivity.java';s=p.read_text();s=s.replace('super.onCre
                 }
             } catch(Exception ignored) {}
         }
-        getWindow()''').replace('Files.readString(', 'NetReport.readText(');p.write_text(s)
+        getWindow()''').replace('Files.readString(', 'NetReport.readText(')
+s=s.replace('c.setChecked(checked);layout.addView(c);','c.setChecked(checked);c.setButtonTintList(new android.content.res.ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{0xFF8AC9FC,0xFF8AA2B8}));layout.addView(c);')
+s=s.replace('Возможен расход до ~50 МиБ и влияние локального VPN на соединения.', 'Лимит наблюдения — примерно 50 МиБ. Он не блокирует дальнейший трафик приложений: после завершения проверь, что видео остановлено. Локальный VPN может влиять на соединения.')
+p.write_text(s)
 p=root/'app/src/androidTest/java/com/emanuelef/remote_capture/netcheck/NetSmoke.java'
 if p.exists():p.write_text(p.read_text().replace('z.getInputStream(e).readAllBytes()', 'NetReport.readStream(z.getInputStream(e))'))
-# Explicitly override library manifests; do not inherit their backup/storage settings.
 A='{http://schemas.android.com/apk/res/android}';T='{http://schemas.android.com/tools}'
 ET.register_namespace('android',A[1:-1]);ET.register_namespace('tools',T[1:-1])
 p=root/'app/src/main/AndroidManifest.xml';tree=ET.parse(p);manifest=tree.getroot();app=manifest.find('application')
@@ -49,4 +49,32 @@ p=java/'netcheck/NetRunService.java';s=p.read_text().replace('if(SystemClock.ela
                         }
                     }
                     if(SystemClock.elapsedRealtime()>deadline)requestStop("time_limit");''');p.write_text(s)
-print('Applied privacy, manifest, file-API compatibility and interrupted/network-change handling.')
+# Deterministic finish: pause a known YouTube control if visible and return to our dashboard.
+p=java/'netcheck/AutoService.java';s=p.read_text().replace('public void endStep(){target=null;handler.removeCallbacks(tick);}', '''public void endStep(){
+        String previous=target;target=null;handler.removeCallbacks(tick);
+        if(previous==null || NetRunService.instance==null)return;
+        AccessibilityNodeInfo root=null;
+        try {
+            root=getRootInActiveWindow();
+            if(root==null || root.getPackageName()==null || !previous.contentEquals(root.getPackageName()))return;
+            if("com.google.android.youtube".equals(previous)) {
+                for(String id:new String[]{"player_control_play_pause_replay_button","play_pause_button"}) {
+                    for(AccessibilityNodeInfo n:root.findAccessibilityNodeInfosByViewId(previous+":id/"+id)) {
+                        try {
+                            String d=n.getContentDescription()==null?"":n.getContentDescription().toString().trim().toLowerCase(Locale.ROOT);
+                            if((d.equals("pause")||d.equals("приостановить")||d.equals("пауза")) && n.isClickable()) n.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                        } finally { n.recycle(); }
+                    }
+                }
+            }
+            startActivity(new Intent(this,NetCheckActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        } catch(Exception ignored) { } finally { if(root!=null)root.recycle(); }
+    }''');p.write_text(s)
+# Rely on Android's system fonts only.
+res=root/'app/src/main/res'
+p=res/'layout/payload_item.xml'
+if p.exists():p.write_text(p.read_text().replace('@font/sourcecodepro_regular','monospace'))
+font=res/'font/sourcecodepro_regular.ttf'
+if font.exists():font.unlink()
+p=res/'values/netcheck.xml';s=p.read_text().replace('<style name="NetCheckTheme" parent="Theme.AppCompat.DayNight.NoActionBar">','<style name="NetCheckTheme" parent="Theme.AppCompat.DayNight.NoActionBar"><item name="android:windowBackground">#0C1421</item><item name="android:windowLightNavigationBar">false</item>');p.write_text(s)
+print('Applied privacy, manifest, compatibility, readable UI, system fonts and scenario finish handling.')
