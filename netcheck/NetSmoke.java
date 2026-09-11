@@ -67,13 +67,25 @@ public final class NetSmoke extends Instrumentation {
             long end=SystemClock.elapsedRealtime()+12000;
             while(!CaptureService.isServiceActive()&&SystemClock.elapsedRealtime()<end)Thread.sleep(100);
             require(CaptureService.isServiceActive(),"native_capture_did_not_start");
-            Thread.sleep(1200);require(!CaptureService.hasError(),"native_capture_reported_error");
+            Network vpn=null;
+            end=SystemClock.elapsedRealtime()+12000;
+            while(vpn==null && SystemClock.elapsedRealtime()<end){
+                for(Network n:cm.getAllNetworks()){NetworkCapabilities nc=cm.getNetworkCapabilities(n);if(nc!=null&&nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN)){vpn=n;break;}}
+                if(vpn==null)Thread.sleep(100);
+            }
+            require(vpn!=null,"vpn_network_not_registered");
+            Thread.sleep(500);require(!CaptureService.hasError(),"native_capture_reported_error");
             require(CaptureService.getCurPayloadMode()==Prefs.PayloadMode.NONE,"payload_collection_enabled");
-            echo(null);
-            Thread.sleep(2000);ConnectionsRegister reg=CaptureService.getConnsRegister();require(reg!=null,"capture_register_missing");
-            boolean tcp=false,udp=false;
-            synchronized(reg){for(int i=0;i<reg.getConnCount();i++){ConnectionDescriptor d=reg.getConn(i);if(d!=null && "10.0.2.2".equals(d.dst_ip) && d.rcvd_bytes>0){if(d.ipproto==6 && d.dst_port==18443)tcp=true;if(d.ipproto==17 && d.dst_port==18444)udp=true;}}}
-            require(tcp,"tcp_flow_not_observed");require(udp,"udp_flow_not_observed");
+            echo(vpn);
+            ConnectionsRegister reg=CaptureService.getConnsRegister();require(reg!=null,"capture_register_missing");
+            boolean tcp=false,udp=false;String details="";
+            end=SystemClock.elapsedRealtime()+6000;
+            while(!(tcp&&udp)&&SystemClock.elapsedRealtime()<end){
+                Thread.sleep(250);StringBuilder b=new StringBuilder();
+                synchronized(reg){for(int i=0;i<reg.getConnCount();i++){ConnectionDescriptor d=reg.getConn(i);if(d==null)continue;b.append(d.dst_ip).append(':').append(d.dst_port).append('/').append(d.ipproto).append(" rx=").append(d.rcvd_bytes).append(" uid=").append(d.uid).append(';');if("10.0.2.2".equals(d.dst_ip) && d.rcvd_bytes>0){if(d.ipproto==6 && d.dst_port==18443)tcp=true;if(d.ipproto==17 && d.dst_port==18444)udp=true;}}}
+                details=b.toString();
+            }
+            require(tcp,"tcp_flow_not_observed: "+details);require(udp,"udp_flow_not_observed: "+details);
             out.putString("capture_dns",CaptureService.getDNSServer());CaptureService.stopService();
             end=SystemClock.elapsedRealtime()+8000;while(CaptureService.isServiceActive()&&SystemClock.elapsedRealtime()<end)Thread.sleep(100);
             require(!CaptureService.isServiceActive(),"capture_did_not_stop");
