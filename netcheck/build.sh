@@ -13,7 +13,7 @@ if [ ! -x "$SM" ]; then echo 'Android SDK manager not installed on this runner';
 PHASE=sdk
 python3 "$ROOT/netcheck/ci_status.py" running "$PHASE"
 yes | "$SM" --licenses >/dev/null 2>&1 || true
-"$SM" --install 'platform-tools' 'platforms;android-37' 'build-tools;37.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+"$SM" --install 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
 PHASE=clone
 WORK="${RUNNER_TEMP:-/tmp}/netcheck-build"
 mkdir -p "$WORK"
@@ -24,6 +24,17 @@ git -C "$SRC" checkout dbfd5e04f560adf02f88c8fd0a8d3588e39fa71f
 git -C "$SRC" submodule update --init --recursive --depth 1 submodules/nDPI submodules/zdtun submodules/libpcap submodules/MaxMind-DB-Reader-java submodules/zstd
 python3 "$ROOT/netcheck/prepare.py" "$SRC"
 python3 "$ROOT/netcheck/finish_prepare.py" "$SRC"
+# The available runner SDK is 36. Preserve Android 37 runtime permission checks using literal API constants.
+python3 - "$SRC" <<'PY'
+from pathlib import Path
+import sys
+r=Path(sys.argv[1])
+p=r/'app/build.gradle';s=p.read_text().replace('compileSdk 37','compileSdk 36').replace('targetSdk 37','targetSdk 36');p.write_text(s)
+for p in (r/'app/src').rglob('*.java'):
+    s=p.read_text()
+    s=s.replace('Build.VERSION_CODES.CINNAMON_BUN','37').replace('Manifest.permission.ACCESS_LOCAL_NETWORK','"android.permission.ACCESS_LOCAL_NETWORK"')
+    p.write_text(s)
+PY
 printf 'sdk.dir=%s\n' "$SDK" > "$SRC/local.properties"
 chmod +x "$SRC/gradlew"
 PHASE=gradle
@@ -36,8 +47,8 @@ test -s "$APK"
 test -s "$TEST"
 cp "$APK" "$OUT/NetCheck.apk"
 cp "$TEST" "$OUT/NetCheck-tests.apk"
-"$SDK/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$OUT/NetCheck.apk" | tee "$OUT/verification.txt"
-"$SDK/build-tools/37.0.0/aapt" dump badging "$OUT/NetCheck.apk" > "$OUT/apk-badging.txt"
+"$SDK/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$OUT/NetCheck.apk" | tee "$OUT/verification.txt"
+"$SDK/build-tools/36.0.0/aapt" dump badging "$OUT/NetCheck.apk" > "$OUT/apk-badging.txt"
 PHASE=source_archive
 mkdir -p "$SRC/netcheck-build-recipes"
 cp -r "$ROOT/netcheck/overlay" "$SRC/netcheck-build-recipes/"
