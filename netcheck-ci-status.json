@@ -1,9 +1,9 @@
 {
-  "state": "failure",
-  "phase": "final",
-  "run_id": "34620028840",
-  "head_sha": "edf74381e401972109e15585f2f02cfd1c385bd9",
-  "updated_utc": "2026-09-11T16:06:26Z",
-  "log_tail": "yes: standard output: Broken pipe\nLoading package information...                                                  \nLoading local repository...                                                     \n[                                       ] 3% Loading local repository...        \n[                                       ] 3% Fetch remote repository...         \n[=                                      ] 3% Fetch remote repository...         \n[=                                      ] 4% Fetch remote repository...         \n[=                                      ] 5% Fetch remote repository...         \n[==                                     ] 5% Fetch remote repository...         \n[==                                     ] 6% Fetch remote repository...         \n[==                                     ] 7% Fetch remote repository...         \n[==                                     ] 7% Computing updates...               \n[===                                    ] 8% Computing updates...               \n[===                                    ] 10% Computing updates...              \n                                                                                \nWarning: Failed to find package 'platforms;android-37'\n[===                                    ] 10% Computing updates...              \n",
+  "state": "running",
+  "phase": "sdk",
+  "run_id": "34620227124",
+  "head_sha": "26123c967fc317becc7c6672c114d950ff73f50a",
+  "updated_utc": "2026-09-11T16:08:18Z",
+  "log_tail": "",
   "smoke_tail": null
 }
