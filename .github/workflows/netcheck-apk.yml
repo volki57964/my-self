@@ -1,0 +1,32 @@
+name: NetCheck APK
+on:
+  push:
+    branches: ['netcheck/android-pilot-20260911']
+    paths: ['netcheck/**', '.github/workflows/netcheck-apk.yml']
+permissions:
+  contents: write
+concurrency:
+  group: netcheck-pilot
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build when source is ready
+        if: ${{ hashFiles('netcheck/build.sh') != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash netcheck/build.sh
+      - name: Upload build outputs
+        if: ${{ always() && hashFiles('netcheck/output/*') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetCheck-build
+          path: netcheck/output/
+          retention-days: 14
