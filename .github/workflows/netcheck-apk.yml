@@ -11,18 +11,44 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-      - name: Build when source is ready
+      - name: Build APK and corresponding source
         if: ${{ hashFiles('netcheck/build.sh') != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: bash netcheck/build.sh
+      - name: Enable emulator KVM
+        if: ${{ hashFiles('netcheck/output/NetCheck.apk') != '' }}
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Emulator install and integration smoke
+        if: ${{ hashFiles('netcheck/output/NetCheck.apk') != '' }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: bash netcheck/smoke.sh
+      - name: Publish verified test build
+        if: ${{ success() && hashFiles('netcheck/output/NetCheck.apk') != '' }}
+        run: |
+          TAG="netcheck-pilot-20260911-r${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "NetCheck 0.1 pilot (build ${GITHUB_RUN_NUMBER})" --notes-file netcheck/README.md netcheck/output/NetCheck.apk netcheck/output/NetCheck-source.tar.gz netcheck/output/SHA256SUMS.txt netcheck/output/verification.txt netcheck/output/NetCheck-emulator.png
+      - name: Record final status
+        if: ${{ always() && hashFiles('netcheck/build.sh') != '' }}
+        env:
+          BUILD_STATUS: ${{ job.status }}
+        run: python3 netcheck/ci_status.py "$BUILD_STATUS" final
       - name: Upload build outputs
         if: ${{ always() && hashFiles('netcheck/output/*') != '' }}
         uses: actions/upload-artifact@v4
