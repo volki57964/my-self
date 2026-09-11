@@ -5,6 +5,8 @@ import sys, xml.etree.ElementTree as ET
 root=Path(sys.argv[1]); java=root/'app/src/main/java/com/emanuelef/remote_capture'
 p=java/'PCAPdroid.java';s=p.read_text().replace('// NetCheck: avoid persistent native diagnostic logs outside explicit reports.','if(!isUnderTest())\n            Log.init(getCacheDir().getAbsolutePath());');p.write_text(s)
 p=java/'Log.java';s=p.read_text().replace('cachedir + "/" + DEFAULT_LOGGER_PATH','"/dev/null"').replace('cachedir + "/" + MITM_LOGGER_PATH','"/dev/null"');p.write_text(s)
+# Upstream only used this field during hostname resolution. Our per-socket network pinning needs it for the entire session.
+p=java/'CaptureService.java';s=p.read_text();s=s.replace('boolean hostResolved = resolveHosts();\n        mUnderlyingNetwork = null;', 'boolean hostResolved = resolveHosts();\n        // NetCheck: retain physical Network until the capture service ends.');p.write_text(s)
 p=java/'netcheck/NetReport.java';s=p.read_text().replace('public static String error(Throwable t)', '''public static String readText(java.nio.file.Path path) throws IOException {
         return new String(java.nio.file.Files.readAllBytes(path), java.nio.charset.StandardCharsets.UTF_8);
     }
@@ -49,7 +51,6 @@ p=java/'netcheck/NetRunService.java';s=p.read_text().replace('if(SystemClock.ela
                         }
                     }
                     if(SystemClock.elapsedRealtime()>deadline)requestStop("time_limit");''');p.write_text(s)
-# Deterministic finish: pause a known YouTube control if visible and return to our dashboard.
 p=java/'netcheck/AutoService.java';s=p.read_text().replace('public void endStep(){target=null;handler.removeCallbacks(tick);}', '''public void endStep(){
         String previous=target;target=null;handler.removeCallbacks(tick);
         if(previous==null || NetRunService.instance==null)return;
@@ -77,4 +78,4 @@ if p.exists():p.write_text(p.read_text().replace('@font/sourcecodepro_regular','
 font=res/'font/sourcecodepro_regular.ttf'
 if font.exists():font.unlink()
 p=res/'values/netcheck.xml';s=p.read_text().replace('<style name="NetCheckTheme" parent="Theme.AppCompat.DayNight.NoActionBar">','<style name="NetCheckTheme" parent="Theme.AppCompat.DayNight.NoActionBar"><item name="android:windowBackground">#0C1421</item><item name="android:windowLightNavigationBar">false</item>');p.write_text(s)
-print('Applied privacy, manifest, compatibility, readable UI, system fonts and scenario finish handling.')
+print('Applied privacy, network pinning, compatibility, readable UI and scenario finish handling.')
